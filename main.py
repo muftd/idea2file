@@ -1,15 +1,17 @@
 """idea2file CLI entry point.
 
 This script collects a user's idea, merges it with a Markdown template,
-optionally calls an LLM to expand the idea, and writes the output to
-``idea.md``.  The code is intentionally verbose with comments so that
+optionally calls an LLM to expand the idea, and writes the output to a
+timestamped Markdown file.  The code is intentionally verbose with comments so that
 non-technical teammates can follow along.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -19,7 +21,6 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency for offlin
     OpenAI = None  # type: ignore[assignment]
 
 TEMPLATE_PATH = Path(__file__).with_name("prompt_template.txt")
-OUTPUT_PATH = Path(__file__).with_name("idea.md")
 
 
 def load_api_key() -> Optional[str]:
@@ -111,6 +112,31 @@ def generate_markdown(template: str, idea: str, api_key: Optional[str]) -> str:
     return base_prompt
 
 
+def _sanitize_visible_text(text: str, *, max_length: int = 10) -> str:
+    """Return the first ``max_length`` visible characters without special symbols."""
+
+    visible = "".join(ch for ch in text if not ch.isspace())
+    truncated = visible[:max_length]
+    sanitized = re.sub(r"[^\w\u4e00-\u9fff]", "", truncated)
+    return sanitized or "idea"
+
+
+def build_output_path(idea: str) -> Path:
+    """Create a timestamped Markdown filename derived from the user's idea."""
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M")
+    stem = _sanitize_visible_text(idea)
+    base_name = f"{timestamp}-{stem}.md"
+    candidate = Path(__file__).with_name(base_name)
+
+    suffix = 2
+    while candidate.exists():
+        candidate = Path(__file__).with_name(f"{timestamp}-{stem}-{suffix}.md")
+        suffix += 1
+
+    return candidate
+
+
 def main() -> None:
     """Entry point executed when the script runs from the command line."""
 
@@ -119,9 +145,10 @@ def main() -> None:
     api_key = load_api_key()
 
     markdown = generate_markdown(template, user_idea, api_key)
-    OUTPUT_PATH.write_text(markdown, encoding="utf-8")
+    output_path = build_output_path(user_idea)
+    output_path.write_text(markdown, encoding="utf-8")
 
-    print("✅ 已生成 idea.md")
+    print(f"✅ 已生成 {output_path.name}")
 
 
 if __name__ == "__main__":
