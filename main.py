@@ -8,13 +8,15 @@ non-technical teammates can follow along.
 
 from __future__ import annotations
 
-import json
 import os
 import sys
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Optional
+
+try:
+    from openai import OpenAI
+except ModuleNotFoundError:  # pragma: no cover - optional dependency for offline demos
+    OpenAI = None  # type: ignore[assignment]
 
 TEMPLATE_PATH = Path(__file__).with_name("prompt_template.txt")
 OUTPUT_PATH = Path(__file__).with_name("idea.md")
@@ -57,52 +59,39 @@ def merge_template_with_idea(template: str, idea: str) -> str:
 
 
 def call_openai_api(prompt: str, api_key: str) -> Optional[str]:
-    """Send the prompt to OpenAI's Chat Completions API.
+    """Send the prompt to OpenRouter-compatible Chat Completions API."""
 
-    The function returns the generated Markdown string if the call succeeds,
-    otherwise ``None`` which signals the caller to fall back to offline mode.
-    """
+    if OpenAI is None:
+        print("⚠️ 未找到 OpenAI SDK，无法连接到 OpenRouter。")
+        return None
 
-    request_body = json.dumps(
-        {
-            "model": "gpt-3.5-turbo",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "你是一名结构化思维助手。请依据用户提供的模板和原始想法，"
-                        "生成清晰、可执行的 Markdown。"
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-        }
-    ).encode("utf-8")
-
-    request = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions",
-        data=request_body,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
+    client = OpenAI(
+        api_key=api_key,
+        base_url=os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1"),
     )
 
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except urllib.error.URLError:
-        return None
-    except json.JSONDecodeError:
+        completion = client.chat.completions.create(
+            model="openrouter/auto",
+            messages=[
+                {"role": "system", "content": "你是知识结构化助手。"},
+                {"role": "user", "content": prompt},
+            ],
+        )
+    except Exception:
         return None
 
-    choices = payload.get("choices") or []
+    choices = getattr(completion, "choices", None) or []
     if not choices:
         return None
 
-    message = choices[0].get("message") or {}
-    content = message.get("content")
-    return content.strip() if isinstance(content, str) else None
+    first_choice = choices[0]
+    message = getattr(first_choice, "message", None)
+    content = getattr(message, "content", None) if message else None
+    if isinstance(content, str):
+        return content.strip()
+
+    return None
 
 
 def generate_markdown(template: str, idea: str, api_key: Optional[str]) -> str:
