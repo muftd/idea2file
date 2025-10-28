@@ -8,6 +8,7 @@ non-technical teammates can follow along.
 
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import sys
@@ -140,7 +141,23 @@ def build_output_path(idea: str) -> Path:
 def main() -> None:
     """Entry point executed when the script runs from the command line."""
 
-    user_idea = input("请输入你的想法：").strip()
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description="将想法转换为结构化的 Markdown 文件"
+    )
+    parser.add_argument(
+        "--idea",
+        type=str,
+        help="直接通过命令行提供想法，而不使用交互式输入",
+    )
+    args = parser.parse_args()
+
+    # Use command-line argument if provided, otherwise prompt interactively
+    if args.idea:
+        user_idea = args.idea.strip()
+    else:
+        user_idea = input("请输入你的想法：").strip()
+
     template = read_template()
     api_key = load_api_key()
 
